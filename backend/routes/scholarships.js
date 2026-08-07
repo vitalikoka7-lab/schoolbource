@@ -1,57 +1,110 @@
 const express = require("express");
-const db = require("../config/db");
+const { v4: uuidv4 } = require("uuid");
+const { supabase, getUserById } = require("../config/db");
 const { requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
+router.use(requireAuth);
 
 // GET /api/scholarships - liste toutes les bourses (avec filtres optionnels)
 // query: ?country=Canada&level=Master&search=ia
-router.get("/", (req, res) => {
-  const { country, level, search } = req.query;
-  let results = db.get("scholarships").value();
-
-  if (country) {
-    results = results.filter((s) => s.country.toLowerCase() === country.toLowerCase());
+router.get("/", async (req, res) => {
+  try {
+    const { country, level, search } = req.query;
+    
+    let query = supabase.from('scholarships').select('*').eq('active', true);
+    
+    if (country) {
+      query = query.eq('country', country);
+    }
+    if (level) {
+      // Pour les tableaux, on utilise l'opérateur contains
+      query = query.contains('levels', [level]);
+    }
+    if (search) {
+      // Recherche textuelle simple (à améliorer avec full-text search PostgreSQL)
+      const q = search.toLowerCase();
+      const { data: all } = await query;
+      const results = all.filter(s => 
+        s.title.toLowerCase().includes(q) || 
+        s.provider.toLowerCase().includes(q)
+      );
+      return res.json(results);
+    }
+    
+    const { data, error } = await query;
+    if (error) throw error;
+    
+    res.json(data);
+  } catch (err) {
+    console.error("Erreur récupération bourses:", err);
+    res.status(500).json({ error: "Erreur lors de la récupération des bourses." });
   }
-  if (level) {
-    results = results.filter((s) => s.levels.some((l) => l.toLowerCase() === level.toLowerCase()));
-  }
-  if (search) {
-    const q = search.toLowerCase();
-    results = results.filter(
-      (s) => s.title.toLowerCase().includes(q) || s.provider.toLowerCase().includes(q)
-    );
-  }
-
-  res.json(results);
 });
 
 // GET /api/scholarships/:id
-router.get("/:id", (req, res) => {
-  const scholarship = db.get("scholarships").find({ id: req.params.id }).value();
-  if (!scholarship) return res.status(404).json({ error: "Bourse introuvable." });
-  res.json(scholarship);
+router.get("/:id", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('scholarships')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    
+    if (error) {
+      if (error.code === 'PGRST116') return res.status(404).json({ error: "Bourse introuvable." });
+      throw error;
+    }
+    
+    res.json(data);
+  } catch (err) {
+    console.error("Erreur récupération bourse:", err);
+    res.status(500).json({ error: "Erreur lors de la récupération de la bourse." });
+  }
 });
 
 // GET /api/scholarships/recommended/for-me - bourses recommandées selon le profil
-router.get("/recommended/for-me", requireAuth, (req, res) => {
-  const profile = db.get("profiles").find({ userId: req.userId }).value();
-  const all = db.get("scholarships").value();
-
-  if (!profile) return res.json(all.slice(0, 6));
-
-  const preferredCountries = (profile.goals && profile.goals.preferredCountries) || [];
-  const field = profile.goals && profile.goals.field;
-
-  const scored = all.map((s) => {
-    let score = 0;
-    if (preferredCountries.includes(s.country)) score += 2;
-    if (field && s.field && s.field.toLowerCase() === field.toLowerCase()) score += 2;
-    return { ...s, matchScore: score };
-  });
-
-  scored.sort((a, b) => b.matchScore - a.matchScore);
-  res.json(scored.slice(0, 12));
+router.get("/recommended/for-me", requireAuth, async (req, res) => {
+  try {
+    const profile = await getUserById(req.userId);
+    
+    if (!profile) {
+      // Si pas de profil, retourner les bourses featured
+      const { data } = await supabase
+        .from('scholarships')
+        .select('*')
+        .eq('active', true)
+        .eq('featured', true)
+        .limit(6);
+      return res.json(data || []);
+    }
+    
+    const preferredCountries = profile.preferred_countries || [];
+    const field = profile.goals?.field;
+    
+    // Récupérer toutes les bourses actives
+    const { data: all } = await supabase
+      .from('scholarships')
+      .select('*')
+      .eq('active', true);
+    
+    if (!all) return res.json([]);
+    
+    // Calculer un score de compatibilité
+    const scored = all.map((s) => {
+      let score = 0;
+      if (preferredCountries.includes(s.country)) score += 2;
+      if (field && s.field && s.field.toLowerCase() === field.toLowerCase()) score += 2;
+      if (s.featured) score += 1;
+      return { ...s, matchScore: score };
+    });
+    
+    scored.sort((a, b) => b.matchScore - a.matchScore);
+    res.json(scored.slice(0, 12));
+  } catch (err) {
+    console.error("Erreur recommandation bourses:", err);
+    res.status(500).json({ error: "Erreur lors de la recommandation des bourses." });
+  }
 });
 
 module.exports = router;
