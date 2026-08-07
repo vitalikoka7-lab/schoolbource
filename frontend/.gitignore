@@ -1,5 +1,10 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# 1. Installer les dépendances
+cd /workspace/frontend
+npm install
 
+# 2. Démarrer le serveur de développement
+npm run dev
 # dependencies
 /node_modules
 /.pnp
