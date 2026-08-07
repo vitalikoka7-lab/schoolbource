@@ -1,0 +1,23 @@
+# Variables d'environnement
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Dépendances
+node_modules/
+
+# Fichiers temporaires
+*.tmp
+*.swp
+.DS_Store
+
+# Uploads (si utilisé localement)
+uploads/
+
+# Coverage tests
+coverage/
