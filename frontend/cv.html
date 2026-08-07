@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mon Profil / CV — ScholarPass</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main>
+    <div class="topbar">
+      <h3 style="margin:0;">Mon Profil / Mon CV</h3>
+      <button class="btn-secondary" onclick="window.print()">🖨️ Télécharger PDF</button>
+    </div>
+    <div style="padding:24px;max-width:700px;">
+      <p style="color:#64748b;margin-top:0;">Ton profil est automatiquement transformé en CV.</p>
+      <div class="card" id="cv-card">Chargement...</div>
+    </div>
+  </main>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+<script>
+Auth.requireAuth();
+renderSidebar("cv.html");
+
+async function load() {
+  const profile = await Api.getProfile();
+  const user = Auth.getUser();
+  const p = profile.personalInfo || {};
+
+  document.getElementById("cv-card").innerHTML = `
+    <div style="text-align:center;margin-bottom:16px;">
+      <div style="width:80px;height:80px;border-radius:50%;background:#2563eb;color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;margin:0 auto 10px;">
+        ${(p.firstName || user.firstName)[0].toUpperCase()}
+      </div>
+      <h3 style="margin:4px 0 2px;">${p.firstName || user.firstName} ${user.lastName || ""}</h3>
+      <p style="margin:0;color:#64748b;font-size:14px;">${(profile.education?.[0]?.speciality) || "Étudiant(e)"}</p>
+      <p style="margin:4px 0 0;color:#94a3b8;font-size:13px;">${p.country || ""} · ${user.email}</p>
+    </div>
+
+    <h4>Formation</h4>
+    ${(profile.education || []).map(e => `
+      <p style="margin:4px 0;"><strong>${e.degree}</strong> ${e.speciality ? "en " + e.speciality : ""} — ${e.school}
+      <br><span style="color:#94a3b8;font-size:13px;">${e.startYear || ""} - ${e.endYear || e.status}</span></p>
+    `).join("") || "<p style='color:#94a3b8;'>Aucune formation renseignée.</p>"}
+
+    <h4>Expériences</h4>
+    ${(profile.experiences || []).map(e => `
+      <p style="margin:4px 0;"><strong>${e.title}</strong> — ${e.organization}
+      <br><span style="color:#94a3b8;font-size:13px;">${e.period || ""}</span></p>
+    `).join("") || "<p style='color:#94a3b8;'>Aucune expérience renseignée.</p>"}
+
+    <h4>Compétences</h4>
+    <p>${(profile.skills || []).join(" · ") || "<span style='color:#94a3b8;'>Aucune compétence renseignée.</span>"}</p>
+  `;
+}
+load();
+</script>
+</body>
+</html>

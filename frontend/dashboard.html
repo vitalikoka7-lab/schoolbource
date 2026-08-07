@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Accueil — ScholarPass</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar"></aside>
+
+  <main>
+    <div class="topbar">
+      <input class="input" style="max-width:360px;" placeholder="🔍 Rechercher une bourse, une école..." />
+      <div style="display:flex;align-items:center;gap:14px;">
+        <span>🔔</span>
+        <div id="avatar" style="width:34px;height:34px;border-radius:50%;background:#2563eb;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;"></div>
+      </div>
+    </div>
+
+    <div style="padding:24px;max-width:1100px;">
+      <h2 style="margin:0 0 4px;" id="welcome-msg">Bienvenue 👋</h2>
+      <p style="color:#64748b;margin:0 0 20px;">Trouvez des bourses, construisez votre profil et réalisez vos rêves.</p>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px;">
+        <div class="card" style="display:flex;gap:14px;align-items:center;">
+          <div class="stat-icon" style="background:#eff6ff;">🎓</div>
+          <div><p style="margin:0;color:#64748b;font-size:13px;">Bourses trouvées</p>
+            <p id="stat-scholarships" style="margin:2px 0;font-size:22px;font-weight:700;">—</p></div>
+        </div>
+        <div class="card" style="display:flex;gap:14px;align-items:center;">
+          <div class="stat-icon" style="background:#ecfdf5;">🗂️</div>
+          <div><p style="margin:0;color:#64748b;font-size:13px;">Dossiers créés</p>
+            <p id="stat-applications" style="margin:2px 0;font-size:22px;font-weight:700;">—</p></div>
+        </div>
+        <div class="card" style="display:flex;gap:14px;align-items:center;">
+          <div class="stat-icon" style="background:#f5f3ff;">📨</div>
+          <div><p style="margin:0;color:#64748b;font-size:13px;">Candidatures envoyées</p>
+            <p id="stat-submitted" style="margin:2px 0;font-size:22px;font-weight:700;">—</p></div>
+        </div>
+        <div class="card" style="display:flex;gap:14px;align-items:center;">
+          <div class="stat-icon" style="background:#fff7ed;">🏆</div>
+          <div><p style="margin:0;color:#64748b;font-size:13px;">Profil complété</p>
+            <p id="stat-completion" style="margin:2px 0;font-size:22px;font-weight:700;">—</p>
+            <a href="profile.html" style="font-size:12.5px;color:#2563eb;font-weight:600;text-decoration:none;">Compléter mon profil →</a></div>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3 style="margin:0;">Bourses recommandées pour vous</h3>
+        <a href="scholarships.html" style="color:#2563eb;font-size:14px;font-weight:600;text-decoration:none;">Voir toutes</a>
+      </div>
+
+      <div id="reco-list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:24px;"></div>
+
+      <div class="card" style="background:linear-gradient(90deg,#2563eb,#1d4ed8);color:#fff;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <p style="margin:0 0 4px;font-weight:700;">Complétez votre profil pour des recommandations 100% personnalisées</p>
+          <p style="margin:0;font-size:13.5px;opacity:.9;">Plus votre profil est complet, plus nous trouvons des bourses adaptées.</p>
+        </div>
+        <a href="profile.html" class="btn-secondary" style="background:#fff;">Compléter →</a>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="nova-widget"></div>
+
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+<script>
+  Auth.requireAuth();
+  renderSidebar("dashboard.html");
+  document.getElementById("nova-widget").innerHTML = novaWidgetHTML();
+  initNova();
+
+  const user = Auth.getUser();
+  if (user) {
+    document.getElementById("welcome-msg").textContent = `Bienvenue, ${user.firstName} 👋`;
+    document.getElementById("avatar").textContent = user.firstName[0].toUpperCase();
+  }
+
+  const tagClass = { "Recommandée": "badge-blue", "Populaire": "badge-orange", "Nouvelle": "badge-green" };
+
+  async function load() {
+    try {
+      const [scholarships, applications, profile] = await Promise.all([
+        Api.getScholarships(),
+        Api.getApplications(),
+        Api.getProfile(),
+      ]);
+
+      document.getElementById("stat-scholarships").textContent = scholarships.length;
+      document.getElementById("stat-applications").textContent = applications.length;
+      document.getElementById("stat-submitted").textContent = applications.filter(a => a.status !== "en_preparation").length;
+      document.getElementById("stat-completion").textContent = `${profile.completion || 0}%`;
+
+      const reco = await Api.getRecommended();
+      document.getElementById("reco-list").innerHTML = reco.slice(0, 3).map(s => `
+        <div class="card">
+          ${s.tag ? `<span class="badge ${tagClass[s.tag] || 'badge-gray'}">${s.tag}</span>` : ""}
+          <h4 style="margin:10px 0 2px;">${s.title}</h4>
+          <p style="margin:0 0 10px;color:#64748b;font-size:13.5px;">${s.provider}</p>
+          <p style="margin:0;font-size:13px;color:#64748b;">${s.levels.join(", ")} · 📍 ${s.country}</p>
+          <p style="margin:6px 0 0;font-size:12.5px;color:#94a3b8;">⏳ Date limite : ${new Date(s.deadline).toLocaleDateString("fr-FR")}</p>
+        </div>
+      `).join("") || "<p style='color:#64748b;'>Aucune recommandation pour le moment — complétez votre profil.</p>";
+    } catch (err) {
+      console.error(err);
+    }
+  }
+  load();
+</script>
+</body>
+</html>
