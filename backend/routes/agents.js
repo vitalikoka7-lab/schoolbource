@@ -2,7 +2,7 @@ const express = require("express");
 const Anthropic = require("@anthropic-ai/sdk");
 const { requireAuth } = require("../middleware/auth");
 const { AGENTS } = require("../utils/agents");
-const db = require("../config/db");
+const { supabase, getUserById } = require("../config/db");
 
 const router = express.Router();
 router.use(requireAuth);
@@ -16,7 +16,7 @@ async function askAgent(agentKey, userMessage) {
   if (!agent) throw new Error(`Agent inconnu: ${agentKey}`);
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
+    model: "claude-sonnet-4-5",
     max_tokens: 1000,
     system: agent.system,
     messages: [{ role: "user", content: userMessage }],
@@ -42,9 +42,16 @@ router.post("/onboarding", async (req, res) => {
     const raw = await askAgent("domaine", prompt);
 
     // Sauvegarde dans le profil
-    const profileRef = db.get("profiles").find({ userId: req.userId });
-    if (profileRef.value()) {
-      profileRef.set("goals.lifeIn10Years", answer).write();
+    const profile = await getUserById(req.userId);
+    if (profile) {
+      const currentGoals = profile.goals || {};
+      await supabase
+        .from('profiles')
+        .update({ 
+          goals: { ...currentGoals, lifeIn10Years: answer },
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', req.userId);
     }
 
     res.json({ raw });
@@ -62,7 +69,7 @@ router.post("/chat", async (req, res) => {
     const agent = AGENTS.coach;
 
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-4-5",
       max_tokens: 500,
       system: agent.system,
       messages: [...history, { role: "user", content: message }],
@@ -88,6 +95,21 @@ router.post("/strengths", async (req, res) => {
     if (!freeText) return res.status(400).json({ error: "Le champ 'freeText' est requis." });
 
     const raw = await askAgent("personnalite", freeText);
+    
+    // Parser la réponse JSON et sauvegarder dans le profil
+    try {
+      const analysis = JSON.parse(raw);
+      await supabase
+        .from('profiles')
+        .update({ 
+          personality_analysis: analysis,
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', req.userId);
+    } catch (parseErr) {
+      console.error("Erreur parsing JSON IA:", parseErr);
+    }
+    
     res.json({ raw });
   } catch (err) {
     console.error(err);
@@ -100,15 +122,22 @@ router.post("/strengths", async (req, res) => {
 router.post("/match-score", async (req, res) => {
   try {
     const { scholarshipId } = req.body;
-    const profile = db.get("profiles").find({ userId: req.userId }).value();
-    const scholarship = db.get("scholarships").find({ id: scholarshipId }).value();
-
-    if (!profile || !scholarship) {
+    
+    const profile = await getUserById(req.userId);
+    
+    const { data: scholarship, error } = await supabase
+      .from('scholarships')
+      .select('*')
+      .eq('id', scholarshipId)
+      .single();
+    
+    if (error || !profile || !scholarship) {
       return res.status(404).json({ error: "Profil ou bourse introuvable." });
     }
 
     const prompt = `Profil étudiant: ${JSON.stringify(profile)}\nBourse: ${JSON.stringify(scholarship)}`;
     const raw = await askAgent("strategie", prompt);
+    
     res.json({ raw });
   } catch (err) {
     console.error(err);
